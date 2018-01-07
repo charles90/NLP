@@ -5,13 +5,6 @@ import bisect
 import time
 import common
 
-NB_NOISES = 5
-NB_FEATURES = 128
-WINDOW_SIZE = 3
-BATCH_SIZE = 512
-LEARNING_RATE = 1.0
-NB_STEPS = 1000
-
 
 def generate_batch(words, vocab_dict, batch_size, window_size):
     train_idx_list, label_idx_list = [], []
@@ -82,6 +75,13 @@ def main():
     flags = tf.app.flags
     flags.DEFINE_string('words_file_path', None, 'File path to a list of space-separated words')
     flags.DEFINE_string('reasoning_file_path', None, 'File path to a 4-word analogical reasoning task per row')
+    flags.DEFINE_integer('nb_noises', 5, 'Number of noises for the Negative Sampling')
+    flags.DEFINE_integer('nb_features', 56, 'Length of word embedding vector')
+    flags.DEFINE_integer('window_size', 3, 'Number of context words on either side of target word')
+    flags.DEFINE_integer('batch_size', 512, 'Size of input for each step of Stochastic Gradient Descent')
+    flags.DEFINE_float('learning_rate', 1.0, 'Constant learning rate of Stochastic Gradient Descent')
+    flags.DEFINE_integer('nb_steps', 1000, 'Number of Stochastic Gradient Descent steps')
+    flags.DEFINE_boolean('debug', False, 'Activate TensorFlow debug mode')
     options = flags.FLAGS
 
     with open(options.words_file_path) as f:
@@ -126,8 +126,9 @@ def main():
 
     with tf.Session(graph=graph) as session:
 
-        # session = tf_debug.LocalCLIDebugWrapperSession(session)
-        # session.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+        if options.debug is True:
+            session = tf_debug.LocalCLIDebugWrapperSession(session)
+            session.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
         init.run()
         for step in range(NB_STEPS):
