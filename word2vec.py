@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.python import debug as tf_debug
 import numpy as np
 import bisect
 import time
@@ -108,8 +109,8 @@ def main():
             label_embeddings = tf.nn.embedding_lookup(embeddings, label_indices)
             sampled_embeddings = tf.nn.embedding_lookup(embeddings, sampled_indices)
 
-            nec_activation = tf.nn.sigmoid(tf.matmul(sampled_embeddings, label_embeddings, transpose_b=True))
-            log_nec_activation = -1 * tf.log(nec_activation)
+            nec_activation = tf.nn.sigmoid(-1 * tf.matmul(sampled_embeddings, label_embeddings, transpose_b=True))
+            log_nec_activation = tf.log(nec_activation)
             nec_loss = tf.reduce_mean(log_nec_activation)
 
             embed_activation = tf.nn.sigmoid(tf.matmul(train_embeddings, label_embeddings, transpose_b=True))
@@ -124,6 +125,9 @@ def main():
     losses = []
 
     with tf.Session(graph=graph) as session:
+
+        # session = tf_debug.LocalCLIDebugWrapperSession(session)
+        # session.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
         init.run()
         for step in range(NB_STEPS):
