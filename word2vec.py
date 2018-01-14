@@ -6,6 +6,40 @@ import time
 import common
 
 
+class RunOptions(object):
+    def __init__(self, flags):
+        if flags is None:
+            return
+        self.words_file_path = flags.words_file_path
+        self.reasoning_file_path = flags.reasoning_file_path
+        self.output_file_path = flags.output_file_path
+        self.debug = flags.debug
+        self.confidence = flags.confidence
+        self.nb_noises = flags.nb_noises
+        self.nb_features = flags.nb_features
+        self.window_size = flags.window_size
+        self.batch_size = flags.batch_size
+        self.learning_rate = flags.learning_rate
+        self.nb_steps = flags.nb_steps
+
+    def __str__(self):
+        this_str = "%s: %d\n" % ('nb_noises', self.nb_noises)
+        this_str += "%s: %d\n" % ('nb_features', self.nb_features)
+        this_str += "%s: %d\n" % ('window_size', self.window_size)
+        this_str += "%s: %d\n" % ('batch_size', self.batch_size)
+        this_str += "%s: %.4f\n" % ('learning_rate', self.learning_rate)
+        this_str += "%s: %d\n" % ('nb_steps', self.nb_steps)
+        return this_str
+
+    def __iter__(self):
+        yield 'nb_noises', self.nb_noises
+        yield 'nb_features', self.nb_features
+        yield 'window_size', self.window_size
+        yield 'batch_size', self.batch_size
+        yield 'learning_rate', self.learning_rate
+        yield 'nb_steps', self.nb_steps
+
+
 def generate_batch(words, vocab_dict, batch_size, window_size):
     train_idx_list, label_idx_list = [], []
     for idx in range(batch_size):
@@ -70,19 +104,7 @@ def evaluate_analogical_reasoning(words_1, words_2, words_3, words_4, embeddings
     return tf.abs(embed_diff)
 
 
-def main():
-
-    flags = tf.app.flags
-    flags.DEFINE_string('words_file_path', None, 'File path to a list of space-separated words')
-    flags.DEFINE_string('reasoning_file_path', None, 'File path to a 4-word analogical reasoning task per row')
-    flags.DEFINE_integer('nb_noises', 5, 'Number of noises for the Negative Sampling')
-    flags.DEFINE_integer('nb_features', 56, 'Length of word embedding vector')
-    flags.DEFINE_integer('window_size', 3, 'Number of context words on either side of target word')
-    flags.DEFINE_integer('batch_size', 512, 'Size of input for each step of Stochastic Gradient Descent')
-    flags.DEFINE_float('learning_rate', 1.0, 'Constant learning rate of Stochastic Gradient Descent')
-    flags.DEFINE_integer('nb_steps', 1000, 'Number of Stochastic Gradient Descent steps')
-    flags.DEFINE_boolean('debug', False, 'Activate TensorFlow debug mode')
-    options = flags.FLAGS
+def run_model(options):
 
     with open(options.words_file_path) as f:
         all_words = tf.compat.as_str_any(f.read()).split()
@@ -98,13 +120,13 @@ def main():
 
     with graph.as_default():
 
-        train_indices = tf.placeholder(tf.int32,    [BATCH_SIZE, 2 * WINDOW_SIZE])
-        label_indices = tf.placeholder(tf.int32,    [BATCH_SIZE, 1])
-        sampled_indices = tf.placeholder(tf.int32,  [BATCH_SIZE, 2 * WINDOW_SIZE * NB_NOISES])
+        train_indices = tf.placeholder(tf.int32,    [options.batch_size, 2 * options.window_size])
+        label_indices = tf.placeholder(tf.int32,    [options.batch_size, 1])
+        sampled_indices = tf.placeholder(tf.int32,  [options.batch_size, 2 * options.window_size * options.nb_noises])
 
         with tf.device('/gpu:0'):
 
-            embeddings = tf.Variable(tf.random_uniform([vocab_size, NB_FEATURES], -1.0, 1.0))
+            embeddings = tf.Variable(tf.random_uniform([vocab_size, options.nb_features], -1.0, 1.0))
             train_embeddings = tf.nn.embedding_lookup(embeddings, train_indices)
             label_embeddings = tf.nn.embedding_lookup(embeddings, label_indices)
             sampled_embeddings = tf.nn.embedding_lookup(embeddings, sampled_indices)
@@ -117,7 +139,7 @@ def main():
             log_embed_activation = tf.log(embed_activation)
             loss_function = -1 * (tf.reduce_mean(log_embed_activation) + nec_loss)
 
-            trainer = tf.train.GradientDescentOptimizer(LEARNING_RATE).minimize(loss_function)
+            trainer = tf.train.GradientDescentOptimizer(options.learning_rate).minimize(loss_function)
 
             init = tf.global_variables_initializer()
 
@@ -131,9 +153,17 @@ def main():
             session.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
         init.run()
-        for step in range(NB_STEPS):
-            batch_indices, batch_labels = generate_batch(all_words, word_to_idx_dict, BATCH_SIZE, WINDOW_SIZE)
-            batch_samples = generate_word_sample(word_to_idx_dict, NB_NOISES, BATCH_SIZE, WINDOW_SIZE)
+        for step in range(options.nb_steps):
+            batch_indices, batch_labels = generate_batch(
+                all_words,
+                word_to_idx_dict,
+                options.batch_size,
+                options.window_size)
+            batch_samples = generate_word_sample(
+                word_to_idx_dict,
+                options.nb_noises,
+                options.batch_size,
+                options.window_size)
 
             err, loss = session.run([trainer, loss_function],
                                     {
@@ -142,23 +172,88 @@ def main():
                                         sampled_indices: batch_samples
                                     })
             losses.append(loss)
-            print(step)
-            print(loss)
+            if step % 500 == 0:
+                print(step)
+                print(loss)
             if err is not None:
                 print(err)
 
-        print('Total training time: %d seconds' % (time.time() - t0))
-        print('Smallest loss: %f' % min(losses))
-        print('Last loss: %f' % losses[-1])
-        print('Standard Deviation: %f' % np.std(losses))
-        print('Standard Deviation in the last 100 steps: %f' % np.std(losses[-100:]))
+        train_time = time.time() - t0
+        smallest_loss = min(losses)
+        last_loss = losses[-1]
+        loss_stddev = np.std(losses)
+        loss_stddev_100 = np.std(losses[-100:])
+        print('Total training time: %d seconds' % train_time)
+        print('Smallest loss: %f' % smallest_loss)
+        print('Last loss: %f' % last_loss)
+        print('Standard Deviation: %f' % loss_stddev)
+        print('Standard Deviation in the last 100 steps: %f' % loss_stddev_100)
 
-        logical_diffs = evaluate_analogical_reasoning(words_1, words_2, words_3, words_4, embeddings)
-        avg_diff = tf.reduce_mean(logical_diffs)
+        logical_diffs = evaluate_analogical_reasoning(words_1, words_2, words_3, words_4, embeddings).eval()
+        avg_diff = tf.reduce_mean(logical_diffs).eval()
+        min_dist = min(logical_diffs)
+        max_dist = max(logical_diffs)
         print()
-        print('Average L2 analogical reasoning distance: %f' % avg_diff.eval())
-        print('Minimum L2 analogical reasoning distance: %f' % min(logical_diffs.eval()))
-        print('Maximum L2 analogical reasoning distance: %f' % max(logical_diffs.eval()))
+        print('Average L2 analogical reasoning distance: %f' % avg_diff)
+        print('Minimum L2 analogical reasoning distance: %f' % min_dist)
+        print('Maximum L2 analogical reasoning distance: %f' % max_dist)
+
+        coverage = 0
+        for dist in logical_diffs:
+            if (1 - dist) >= options.confidence:
+                coverage += 1
+        coverage /= len(logical_diffs)
+        print()
+        print('Coverage with confidence %.2f%%: %f' % (options.confidence*100, coverage))
+
+        results_dict = {
+            "train_time": train_time,
+            "smallest_loss": smallest_loss,
+            "last_loss": last_loss,
+            "loss_stddev": loss_stddev,
+            "loss_stddev_100": loss_stddev_100,
+            "avg_diff": avg_diff,
+            "min_dist": min_dist,
+            "max_dist": max_dist,
+            "coverage": coverage
+        }
+        params_dict = {
+            "nb_noises": options.nb_noises,
+            "nb_features": options.nb_features,
+            "window_size": options.window_size,
+            "batch_size": options.batch_size,
+            "learning_rate": options.learning_rate,
+            "nb_steps": options.nb_steps
+        }
+        if options.output_file_path is not None:
+            measures = list(params_dict.keys())
+            measures.append("coverage")
+            values = [str(val) for val in params_dict.values()]
+            values.append(str(coverage))
+            with open(options.output_file_path, "a") as f:
+                f.write(','.join(measures) + '\n')
+                f.write(','.join(values) + '\n')
+
+    return results_dict
+
+
+def main():
+
+    flags = tf.app.flags
+    flags.DEFINE_string('words_file_path', None, 'File path to a list of space-separated words')
+    flags.DEFINE_string('reasoning_file_path', None, 'File path to a 4-word analogical reasoning task per row')
+    flags.DEFINE_integer('nb_noises', 5, 'Number of noises for the Negative Sampling')
+    flags.DEFINE_integer('nb_features', 56, 'Length of word embedding vector')
+    flags.DEFINE_integer('window_size', 3, 'Number of context words on either side of target word')
+    flags.DEFINE_integer('batch_size', 512, 'Size of input for each step of Stochastic Gradient Descent')
+    flags.DEFINE_float('learning_rate', 1.0, 'Constant learning rate of Stochastic Gradient Descent')
+    flags.DEFINE_integer('nb_steps', 1000, 'Number of Stochastic Gradient Descent steps')
+    flags.DEFINE_boolean('debug', False, 'Activate TensorFlow debug mode')
+    flags.DEFINE_string('output_file_path', None, 'Output path for various results of a run')
+    flags.DEFINE_float('confidence', 0.95, 'Level of confidence required for the word similarity to be approved')
+    options = RunOptions(flags.FLAGS)
+    run_model(options)
+
 
 if __name__ == '__main__':
     main()

@@ -95,9 +95,9 @@ def compute_term_frequencies(vocabulary, document_list, weight_scheme):
             if term_idx is not None:
                 ftd_mat[term_idx, doc_idx] += 1
 
-    # for doc_idx in range(ftd_mat.shape[1]):
-    #     assert ftd_mat[:, doc_idx].sum() == len(document_list[doc_idx]),\
-    #         'len(ftd_mat) != len(document) at index %d' % doc_idx
+    for doc_idx in range(ftd_mat.shape[1]):
+        assert ftd_mat[:, doc_idx].sum() == len(document_list[doc_idx]),\
+            'len(ftd_mat) != len(document) at index %d' % doc_idx
 
     if weight_scheme == TermFreqSchemes.TermFrequency:
         for doc_idx, document in enumerate(document_list):
