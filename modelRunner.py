@@ -8,12 +8,13 @@ FEATURES_RANGE = [10, 128]
 WINDOW_SIZE_RANGE = [1, 10]
 BATCH_SIZE_RANGE = [100, 1000]
 LEARN_RATE_RANGE = [1, 4]
+OCCUR_THRESHOLD = [2, 8]
 
 LOG_DISTRIBUTIONS = ["learning_rate"]
 NB_RUNS = 20
 METRIC_LABEL = 'coverage'
 
-options = word2vec.RunOptions({})
+options = word2vec.RunOptions()
 options.words_file_path = r"C:\workspace\NLP\text8\text8"
 options.reasoning_file_path = r"C:\workspace\NLP\source-archive\word2vec\trunk\questions-words.txt"
 options.output_file_path = r"C:\temp\hyper_param_random_run.csv"
@@ -22,20 +23,22 @@ options.confidence = 0.95
 
 result_records = []
 
-for run_idx, nb_noises, nb_features, window_size, batch_size, learning_rate in zip(
+for run_idx, nb_noises, nb_features, window_size, batch_size, learning_rate, occur_threshold in zip(
     range(0, NB_RUNS),
     np.random.randint(NOISES_RANGE[0], NOISES_RANGE[1]+1, NB_RUNS),
     np.random.randint(FEATURES_RANGE[0], FEATURES_RANGE[1]+1, NB_RUNS),
     np.random.randint(WINDOW_SIZE_RANGE[0], WINDOW_SIZE_RANGE[1]+1, NB_RUNS),
     np.random.randint(BATCH_SIZE_RANGE[0], BATCH_SIZE_RANGE[1]+1, NB_RUNS),
-    np.power(10, -1 * (np.random.rand(NB_RUNS) * (LEARN_RATE_RANGE[1] - LEARN_RATE_RANGE[0]) + LEARN_RATE_RANGE[0]))
+    np.power(10, -1 * (np.random.rand(NB_RUNS) * (LEARN_RATE_RANGE[1] - LEARN_RATE_RANGE[0]) + LEARN_RATE_RANGE[0])),
+    np.random.randint(OCCUR_THRESHOLD[0], OCCUR_THRESHOLD[1]+1, NB_RUNS)
 ):
     options.nb_noises = nb_noises
     options.nb_features = nb_features
     options.window_size = window_size
     options.batch_size = batch_size
     options.learning_rate = learning_rate
-    options.nb_steps = 1000
+    options.occurrence_threshold = occur_threshold
+    options.nb_steps = 10000
     print()
     print("Run number %d" % run_idx)
     print(str(options))

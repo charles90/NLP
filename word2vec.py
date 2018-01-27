@@ -7,7 +7,7 @@ import common
 
 
 class RunOptions(object):
-    def __init__(self, flags):
+    def __init__(self, flags=None):
         if flags is None:
             return
         self.words_file_path = flags.words_file_path
@@ -21,6 +21,7 @@ class RunOptions(object):
         self.batch_size = flags.batch_size
         self.learning_rate = flags.learning_rate
         self.nb_steps = flags.nb_steps
+        self.occurrence_threshold = flags.occurrence_threshold
 
     def __str__(self):
         this_str = "%s: %d\n" % ('nb_noises', self.nb_noises)
@@ -29,6 +30,7 @@ class RunOptions(object):
         this_str += "%s: %d\n" % ('batch_size', self.batch_size)
         this_str += "%s: %.4f\n" % ('learning_rate', self.learning_rate)
         this_str += "%s: %d\n" % ('nb_steps', self.nb_steps)
+        this_str += "%s: %d\n" % ('occurrence_threshold', self.occurrence_threshold)
         return this_str
 
     def __iter__(self):
@@ -38,16 +40,19 @@ class RunOptions(object):
         yield 'batch_size', self.batch_size
         yield 'learning_rate', self.learning_rate
         yield 'nb_steps', self.nb_steps
+        yield 'occurrence_threshold', self.occurrence_threshold
 
 
 def generate_batch(words, vocab_dict, batch_size, window_size):
+    unknown_idx = vocab_dict['<UNK>']
     train_idx_list, label_idx_list = [], []
     for idx in range(batch_size):
         word_idx = np.random.randint(window_size, len(words) - window_size)
         word = words[word_idx]
-        label_idx_list.append([vocab_dict[word]])
+        label_idx = vocab_dict.get(word, unknown_idx)
+        label_idx_list.append([label_idx])
         contexts = list(range(word_idx - window_size, word_idx)) + list(range(word_idx + 1, word_idx + window_size + 1))
-        train_idx_list.append([vocab_dict[words[corpus_idx]] for corpus_idx in contexts])
+        train_idx_list.append([vocab_dict.get(words[corpus_idx], unknown_idx) for corpus_idx in contexts])
     return train_idx_list, label_idx_list
 
 
@@ -110,9 +115,13 @@ def run_model(options):
         all_words = tf.compat.as_str_any(f.read()).split()
 
     total_vocab = list(set(all_words))
-    vocab_size = len(total_vocab)
-    word_to_idx_dict = dict([(word, idx) for idx, word in enumerate(total_vocab)])
-    freq_vec = common.compute_term_frequencies(total_vocab, [all_words], common.TermFreqSchemes.TermFrequency)
+    occur_vec = common.compute_term_frequencies(total_vocab, [all_words], common.TermFreqSchemes.RawCount)
+    reduced_vocab = ['<UNK>']
+    for idx, word in enumerate(total_vocab):
+        if occur_vec[idx] >= options.occurrence_threshold:
+            reduced_vocab.append(word)
+    vocab_size = len(reduced_vocab)
+    word_to_idx_dict = dict([(word, idx) for idx, word in enumerate(reduced_vocab)])
 
     words_1, words_2, words_3, words_4 = gather_analogical_vectors(options.reasoning_file_path, word_to_idx_dict)
 
@@ -251,6 +260,7 @@ def main():
     flags.DEFINE_boolean('debug', False, 'Activate TensorFlow debug mode')
     flags.DEFINE_string('output_file_path', None, 'Output path for various results of a run')
     flags.DEFINE_float('confidence', 0.95, 'Level of confidence required for the word similarity to be approved')
+    flags.DEFINE_integer('occurrence_threshold', 5, 'Minimum number of occurrences to be included in the vocabulary')
     options = RunOptions(flags.FLAGS)
     run_model(options)
 
